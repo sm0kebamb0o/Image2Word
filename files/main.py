@@ -6,7 +6,7 @@ from torch.utils.data import DataLoader, random_split
 from torchmetrics.functional import char_error_rate
 from os.path import isfile, join
 import sys
-from multiprocessing import Process
+from multiprocessing import Process, Value
 
 from Model import CustomDataLoader, SimpleHTR
 from Decoding import DecodingMode, best_path_decoding, beam_search_decoding, beam_search_decoding_with_LM
@@ -53,45 +53,50 @@ def convert_to_word(word_embedding:torch.Tensor)->str:
         word += Config.CharsInd[val]
     return word
 
-def calculate_accuracy(
-        symbols_probabilities:torch.Tensor, 
-        labels:torch.Tensor, 
-        device:torch.device, 
-        mode:DecodingMode, 
-        beam_width:int=10,
-        LM:LanguageModel=None):
-    accuracy_cer = 0.
-    accuracy = 0.
+
+def calculate_accuracy(symbols_probabilities: torch.Tensor,
+                       labels: torch.Tensor,
+                       accuracy: Value,
+                       accuracy_cer: Value,
+                       mode: DecodingMode,
+                       beam_width: int = 10,
+                       LM: LanguageModel = None):
+    accuracy_value = 0.
+    accuracy_cer_value = 0.
     if mode == DecodingMode.BestPath:
         for ind, symbols_probability in enumerate(symbols_probabilities):
-            word_embedding = best_path_decoding(symbols_probability, device)
+            word_embedding = best_path_decoding(symbols_probability)
 
             word = convert_to_word(word_embedding)
             ground_truth = convert_to_word(labels[ind])
 
-            accuracy_cer += char_error_rate(word, ground_truth).item() * 100
-            accuracy += torch.equal(word_embedding, labels[ind])
+            accuracy_cer_value += char_error_rate(word,
+                                                  ground_truth).item() * 100
+            accuracy_value += torch.equal(word_embedding, labels[ind])
     elif mode == DecodingMode.BeamSearch:
         for ind, symbols_probability in enumerate(symbols_probabilities):
             word_embedding = beam_search_decoding(
-                symbols_probability, beam_width, device)
-            
+                symbols_probability, beam_width)
+
             word = convert_to_word(word_embedding)
             ground_truth = convert_to_word(labels[ind])
 
-            accuracy_cer += char_error_rate(word, ground_truth).item() * 100
-            accuracy += torch.equal(word_embedding, labels[ind])
+            accuracy_cer_value += char_error_rate(word,
+                                                  ground_truth).item() * 100
+            accuracy_value += torch.equal(word_embedding, labels[ind])
     elif mode == DecodingMode.BeamSearchLM:
         for ind, symbols_probability in enumerate(symbols_probabilities):
             word_embedding = beam_search_decoding_with_LM(
-                symbols_probability, LM, beam_width, device)
-            
+                symbols_probability, LM, beam_width)
+
             word = convert_to_word(word_embedding)
             ground_truth = convert_to_word(labels[ind])
 
-            accuracy_cer += char_error_rate(word, ground_truth).item() * 100
-            accuracy += torch.equal(word_embedding, labels[ind])
-    return accuracy, accuracy_cer / symbols_probabilities.shape[0]
+            accuracy_cer_value += char_error_rate(word,
+                                                  ground_truth).item() * 100
+            accuracy_value += torch.equal(word_embedding, labels[ind])
+    accuracy.value = accuracy_value
+    accuracy_cer.value = accuracy_cer_value / symbols_probabilities.shape[0]
 
 
 def train_model(epochs):
@@ -151,35 +156,32 @@ def train_model(epochs):
                 if (step % 500 == 0):
                     symbols_probabilities = symbols_probabilities.permute(
                         1, 2, 0)
+                    
                     processes = list()
-                    for mode in DecodingMode:
-                        process = Process(target=calculate_accuracy, args=(
-                            symbols_probabilities, labels, device, mode, 10, LM), daemon=True)
-                        processes.append(process)
-                    accuracy_best_path, accuracy_best_path_cer = calculate_accuracy(symbols_probabilities,
-                                                            labels, 
-                                                            device, 
-                                                            DecodingMode.BestPath)
+                    accuracy = [Value('f', 0.0) for _ in range(len(DecodingMode))]
+                    accuracy_cer = [Value('f', 0.0) for _ in range(len(DecodingMode))]
 
-                    accuracy_beam_search, accuracy_beam_search_cer = calculate_accuracy(symbols_probabilities,
-                                                              labels, 
-                                                              device, 
-                                                              DecodingMode.BeamSearch,
-                                                              10)
-                    accuracy_beam_search_with_LM, accuracy_beam_search_with_LM_cer = calculate_accuracy(symbols_probabilities,
-                                                                      labels, 
-                                                                      device, 
-                                                                      DecodingMode.BeamSearchLM, 
-                                                                      10,
-                                                                      LM)
+                    symbols_probabilities = symbols_probabilities.detach().cpu()
+                    labels = labels.detach().cpu()
+
+                    for mode in DecodingMode:
+                        process = Process(target=calculate_accuracy, args=(symbols_probabilities, labels, accuracy[mode.value],
+                                                           accuracy_cer[mode.value], mode, 10, LM,), daemon=True)
+                        processes.append(process)
+                        process.start()
+
+                    for process in processes:
+                        process.join()
+
                     loss_val = loss.item()
-                    print('Training', step, accuracy_best_path, accuracy_best_path_cer,
-                          accuracy_beam_search, accuracy_beam_search_cer, accuracy_beam_search_with_LM, accuracy_beam_search_with_LM_cer,
+                    print('Training', step, accuracy[DecodingMode.BestPath.value].value, accuracy_cer[DecodingMode.BestPath.value].value,
+                          accuracy[DecodingMode.BeamSearch.value].value, accuracy_cer[DecodingMode.BeamSearch.value].value, 
+                          accuracy[DecodingMode.BeamSearchLM.value].value, accuracy_cer[DecodingMode.BeamSearchLM.value].value,
                           loss_val, file=log_file_out, sep=',')
                     print(
-                        f"Training, Step {step}, accuracy_best_path {accuracy_best_path}, accuracy_best_path_cer {accuracy_best_path_cer}, \
-                        accuracy_beam_search {accuracy_beam_search}, accuracy_beam_search_cer {accuracy_beam_search_cer}, \
-                        accuracy_beam_search_with_LM {accuracy_beam_search_with_LM}, accuracy_beam_search_with_LM_cer {accuracy_beam_search_with_LM_cer}, loss {loss_val}.")
+                        f"Training, Step {step}, accuracy_best_path {accuracy[DecodingMode.BestPath.value].value}, accuracy_best_path_cer {accuracy_cer[DecodingMode.BestPath.value].value},\
+                        accuracy_beam_search {accuracy[DecodingMode.BeamSearch.value].value}, accuracy_beam_search_cer {accuracy_cer[DecodingMode.BeamSearch.value].value},\
+                        accuracy_beam_search_with_LM {accuracy[DecodingMode.BeamSearchLM.value].value}, accuracy_beam_search_with_LM_cer {accuracy_cer[DecodingMode.BeamSearchLM.value].value}, loss {loss_val}.")
 
                     net.save(step, epoch, optimizer.state_dict())
                 step += 1
@@ -218,30 +220,38 @@ def train_model(epochs):
 
                     symbols_probabilities = symbols_probabilities.permute(
                         1, 2, 0)
-                    accuracy_best_path, accuracy_best_path_cer = calculate_accuracy(symbols_probabilities,
-                                                                                    labels,
-                                                                                    device,
-                                                                                    DecodingMode.BestPath)
+                    
+                    processes = list()
+                    accuracy = [Value('f', 0.0)
+                                for _ in range(len(DecodingMode))]
+                    accuracy_cer = [Value('f', 0.0)
+                                    for _ in range(len(DecodingMode))]
 
-                    accuracy_beam_search, accuracy_beam_search_cer = calculate_accuracy(symbols_probabilities,
-                                                                                        labels,
-                                                                                        device,
-                                                                                        DecodingMode.BeamSearch, 20)
-                    accuracy_beam_search_with_LM, accuracy_beam_search_with_LM_cer = calculate_accuracy(symbols_probabilities,
-                                                                                                        labels,
-                                                                                                        device,
-                                                                                                        DecodingMode.BeamSearchLM,
-                                                                                                        20,
-                                                                                                        LM)
+                    symbols_probabilities = symbols_probabilities.detach().cpu()
+                    labels = labels.detach().cpu()
+
+                    for mode in DecodingMode:
+                        process = Process(target=calculate_accuracy, args=(symbols_probabilities, labels, accuracy[mode.value],
+                                                                           accuracy_cer[mode.value], mode, 10, LM,), daemon=True)
+                        processes.append(process)
+                        process.start()
+
+                    for process in processes:
+                        process.join()
+
                     temp_losses.append(loss.item())
-                    temp_accuracy_best_path.append(accuracy_best_path)
-                    temp_accuracy_best_path_cer.append(accuracy_best_path_cer)
-                    temp_accuracy_beam_search.append(accuracy_beam_search)
-                    temp_accuracy_beam_search_cer.append(accuracy_beam_search_cer)
+                    temp_accuracy_best_path.append(
+                        accuracy[DecodingMode.BestPath.value].value)
+                    temp_accuracy_best_path_cer.append(
+                        accuracy_cer[DecodingMode.BestPath.value].value)
+                    temp_accuracy_beam_search.append(
+                        accuracy[DecodingMode.BeamSearch.value].value)
+                    temp_accuracy_beam_search_cer.append(
+                        accuracy_cer[DecodingMode.BeamSearch.value].value)
                     temp_accuracy_beam_search_with_LM.append(
-                        accuracy_beam_search_with_LM)
+                        accuracy[DecodingMode.BeamSearchLM.value].value)
                     temp_accuracy_beam_search_with_LM_cer.append(
-                        accuracy_beam_search_with_LM_cer)
+                        accuracy_cer[DecodingMode.BeamSearchLM.value].value)
             net.train()
 
             mean_loss_value = np.mean(temp_losses)
@@ -304,19 +314,12 @@ def test_model(file_path:str):
     parameters_file = join(Config.DataPath, Config.SavedParameters)
     net = SimpleHTR(parameters_file, device).to(device)
 
-    state = torch.load(parameters_file)
-    net.load_state_dict(state['state_dict'])
-    net.set_filter(state['filter'])
+    net.load_previous_state(torch.load(parameters_file))
     net.eval()
     with torch.no_grad():
         image_preds = net.forward(image)
-        symbols_probabilities = torch.permute(
-            image_preds, (2, 0, 1))
-
         symbols_probabilities = torch.nn.functional.log_softmax(
-            input=symbols_probabilities, dim=2)
-
-        symbols_probabilities = symbols_probabilities.permute(1, 2, 0)
+            input=image_preds, dim=1)
 
         for mode in DecodingMode:
             word_embedding = predict(

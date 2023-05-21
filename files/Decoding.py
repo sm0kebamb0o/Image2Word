@@ -12,26 +12,28 @@ import Config
 from LanguageModel import LanguageModel
 
 class DecodingMode(Enum):
-    BestPath = 1
-    BeamSearch = 2
-    BeamSearchLM = 3
+    BestPath = 0
+    BeamSearch = 1
+    BeamSearchLM = 2
+
+    def __len__(self) -> int:
+        return super().__len__()
 
 
-def best_path_decoding(symbols_probability:torch.Tensor, device:torch.device):
+def best_path_decoding(symbols_probability:torch.Tensor):
     most_probable_symbols = torch.argmax(symbols_probability, dim=0)
     most_probable_label = torch.unique_consecutive(most_probable_symbols)
     most_probable_label = most_probable_label[most_probable_label != 0]
 
     new_label = torch.zeros(
-        size=(Config.MaxLabelLength,), dtype=torch.long, device=device)
+        size=(Config.MaxLabelLength,), dtype=torch.long)
     new_label[:most_probable_label.shape[0]] = most_probable_label
 
     return new_label
 
 def beam_search_decoding(
         symbols_probability:torch.Tensor, 
-        beam_width:int=3, 
-        device:torch.device=torch.device('cpu')):
+        beam_width:int=3):
     """
         Implements beam search decoding approach to the probabilities matrix
     """
@@ -96,7 +98,7 @@ def beam_search_decoding(
     word = sorted(beams.keys(), reverse=True,
                   key=lambda beam: beams[beam].total_probability)[0]
     word_embedding = torch.zeros(
-        size=(Config.MaxLabelLength,), dtype=torch.long, device=device)
+        size=(Config.MaxLabelLength,), dtype=torch.long)
     word_embedding[:len(word)] = torch.LongTensor(word)
     return word_embedding
 
@@ -104,8 +106,7 @@ def beam_search_decoding(
 def beam_search_decoding_with_LM(
         symbols_probability:torch.Tensor, 
         LM:LanguageModel, 
-        beam_width:int=3, 
-        device:torch.device='cpu'):
+        beam_width:int=3):
     blank_idx = 0
     not_probable = -10.
     LM_influence = 0.1
@@ -192,6 +193,6 @@ def beam_search_decoding_with_LM(
                   max(len(beam), 1.))[0]
     
     word_embedding = torch.zeros(
-        size=(Config.MaxLabelLength,), dtype=torch.long, device=device)
+        size=(Config.MaxLabelLength,), dtype=torch.long)
     word_embedding[:len(word)] = torch.LongTensor(word)
     return word_embedding
