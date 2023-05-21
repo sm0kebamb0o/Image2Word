@@ -1,4 +1,7 @@
 data/
+!data/weights.pth
+!data/results.csv
+
 files/__pycache__/
 files/*.png
 files/temp.py
