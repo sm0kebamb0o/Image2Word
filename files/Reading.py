@@ -1,7 +1,10 @@
 import pandas as pd
 import matplotlib.pyplot as plt
+from os.path import join
 
-df = pd.read_csv('..\data\log.csv')
+import config
+
+df = pd.read_csv(join(config.DATA_PATH, config.LOG_FILE))
 
 df['Accuracy Best Path'] *= 2
 df['Accuracy Beam Search'] *= 2

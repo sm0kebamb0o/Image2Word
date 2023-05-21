@@ -1,17 +1,16 @@
-MaxLabelLength = 32
-ImageHeight = 32
-ImageWidth = 128
+MAX_LABEL_LENGTH = 32
+IMAGE_HEIGHT = 32
+IMAGE_WIDTH = 128
 
-DataPath = '..\data'
-RawLabelsFile = 'words.txt'
-LabelsFile = 'labels.txt'
+DATA_PATH = '..\data'
+RAW_LABELS_FILE = 'words.txt'
+LABELS_FILE = 'labels.txt'
 
-TextFile = 'corpus.txt'
-LMTable = 'LMTable.csv'
-LMTable_v = 'LMTable.xlsx'
+TEXT_FILE = 'corpus.txt'
+LM_TABLE = 'LMTable.csv'
 
-CharNum = 79
-MapTable = {'A': 1,  'M': 2,  'O': 3,  'V': 4,  'E': 5,  't': 6,
+TERMINALS_NUMBER = 79
+TERMINALS_TO_INDEXES = {'A': 1,  'M': 2,  'O': 3,  'V': 4,  'E': 5,  't': 6,
             'o': 7,  's': 8,  'p': 9,  'r': 10, '.': 11, 'G': 12,
             'a': 13, 'i': 14, 'k': 15, 'e': 16, 'l': 17, 'f': 18,
             'm': 19, 'n': 20, 'g': 21, 'y': 22, 'L': 23, 'b': 24,
@@ -26,7 +25,7 @@ MapTable = {'A': 1,  'M': 2,  'O': 3,  'V': 4,  'E': 5,  't': 6,
             '*': 73, 'X': 74, 'Q': 75, '!': 76, '/': 77, '&': 78,
             '+': 79}
 
-CharsInd = ['', 'A', 'M', 'O', 'V', 'E', 't', 'o', 's', 'p', 'r', '.', 'G',
+INDEXES_TO_TERMINALS = ['', 'A', 'M', 'O', 'V', 'E', 't', 'o', 's', 'p', 'r', '.', 'G',
             'a', 'i', 'k', 'e', 'l', 'f', 'm', 'n', 'g', 'y', 'L', 'b', 'u',
             'P', 'd', 'w', 'h', 'j', 'c', ',', ' ', 'x', '0', 'F', 'W', 'T',
             '-', "'", 'v', 'B', 'H', '"', 'S', '1', '9', '5', '8', '3', '#',
@@ -34,8 +33,11 @@ CharsInd = ['', 'A', 'M', 'O', 'V', 'E', 't', 'o', 's', 'p', 'r', '.', 'G',
             'J', 'Y', '7', ';', 'z', 'Z', '6', '?', '*', 'X', 'Q', '!', '/',
             '&', '+']
 
-TestingPercent = 0.003
-BatchSize = 50
+TESTING_PERCENT = 0.003
+BATCH_SIZE = 50
 
-SavedParameters = 'SavedParameters.pth'
-LogFile = 'log.csv'
+SAVED_PARAMETERS = 'weights.pth'
+LOG_FILE = 'results.csv'
+
+LEARNING_RATE = 1e-3
+LM_INFLUENCE = 1e-1

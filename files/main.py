@@ -8,11 +8,11 @@ from os.path import isfile, join
 import sys
 from multiprocessing import Process, Value
 
-from Model import CustomDataLoader, SimpleHTR
-from Decoding import DecodingMode, best_path_decoding, beam_search_decoding, beam_search_decoding_with_LM
-import Config
-from LanguageModel import LanguageModel
-from DataNormalizer import preprocess_image
+from model import CustomDataLoader, SimpleHTR
+from decoding import *
+import config
+from language_model import LanguageModel
+from data_normalizer import preprocess_image
 
 def MakeInitialSetup():
     if torch.cuda.is_available():
@@ -50,7 +50,7 @@ def CreateDataLoaders(
 def convert_to_word(word_embedding:torch.Tensor)->str:
     word = ''
     for val in word_embedding:
-        word += Config.CharsInd[val]
+        word += config.INDEXES_TO_TERMINALS[val]
     return word
 
 
@@ -101,16 +101,16 @@ def calculate_accuracy(symbols_probabilities: torch.Tensor,
 
 def train_model(epochs):
     device, data_loader_args = MakeInitialSetup()
-    train_loader, test_loader = CreateDataLoaders(Config.DataPath, Config.LabelsFile,
-                                                  Config.TestingPercent, Config.BatchSize,
+    train_loader, test_loader = CreateDataLoaders(config.DATA_PATH, config.LABELS_FILE,
+                                                  config.TESTING_PERCENT, config.BATCH_SIZE,
                                                   data_loader_args)
-    parameters_file = join(Config.DataPath, Config.SavedParameters)
-    log_file = join(Config.DataPath, Config.LogFile)
+    parameters_file = join(config.DATA_PATH, config.SAVED_PARAMETERS)
+    log_file = join(config.DATA_PATH, config.LOG_FILE)
 
     # Experiments
     net = SimpleHTR(parameters_file, device).to(device)
-    LM = LanguageModel(Config.DataPath, Config.TextFile)
-    optimizer = torch.optim.Adam(net.parameters(), lr=1.0e-3)
+    LM = LanguageModel(config.DATA_PATH, config.TEXT_FILE)
+    optimizer = torch.optim.Adam(net.parameters(), lr=config.LEARNING_RATE)
     loss_function = torch.nn.CTCLoss(blank=0, reduction='mean')
     epoch_start = 1
     step_start = 0
@@ -132,15 +132,14 @@ def train_model(epochs):
         step = step_start
         for epoch in range(epoch_start, epochs + 1):
             for images, labels, lengths in train_loader:
-                images, labels, lengths = images.to(
-                    device), labels.to(device), lengths.to(device)
+                images, labels, lengths = images.to(device), labels.to(device), lengths.to(device)
 
                 optimizer.zero_grad()
                 images_transformed = net.forward(images)
 
                 input_lengths = torch.full(
                     size=[images_transformed.shape[0]], 
-                    fill_value=Config.MaxLabelLength, 
+                    fill_value=config.MAX_LABEL_LENGTH, 
                     dtype=torch.long, device=device)
 
                 symbols_probabilities = torch.permute(
@@ -178,10 +177,13 @@ def train_model(epochs):
                           accuracy[DecodingMode.BeamSearch.value].value, accuracy_cer[DecodingMode.BeamSearch.value].value, 
                           accuracy[DecodingMode.BeamSearchLM.value].value, accuracy_cer[DecodingMode.BeamSearchLM.value].value,
                           loss_val, file=log_file_out, sep=',')
-                    print(
-                        f"Training, Step {step}, accuracy_best_path {accuracy[DecodingMode.BestPath.value].value}, accuracy_best_path_cer {accuracy_cer[DecodingMode.BestPath.value].value},\
-                        accuracy_beam_search {accuracy[DecodingMode.BeamSearch.value].value}, accuracy_beam_search_cer {accuracy_cer[DecodingMode.BeamSearch.value].value},\
-                        accuracy_beam_search_with_LM {accuracy[DecodingMode.BeamSearchLM.value].value}, accuracy_beam_search_with_LM_cer {accuracy_cer[DecodingMode.BeamSearchLM.value].value}, loss {loss_val}.")
+                    print(f"Training, Step {step}, accuracy_best_path {accuracy[DecodingMode.BestPath.value].value},", end=' ')
+                    print(f"accuracy_best_path_cer {accuracy_cer[DecodingMode.BestPath.value].value},", end=' ')
+                    print(f"accuracy_beam_search {accuracy[DecodingMode.BeamSearch.value].value},", end=' ')
+                    print(f"accuracy_beam_search_cer {accuracy_cer[DecodingMode.BeamSearch.value].value},", end=' ')
+                    print(f"accuracy_beam_search_with_LM {accuracy[DecodingMode.BeamSearchLM.value].value},", end=' ')
+                    print(f"accuracy_beam_search_with_LM_cer {accuracy_cer[DecodingMode.BeamSearchLM.value].value},", end=' ')
+                    print(f"loss {loss_val}.")
 
                     net.save(step, epoch, optimizer.state_dict())
                 step += 1
@@ -206,7 +208,7 @@ def train_model(epochs):
 
                     input_lengths = torch.full(
                         size=[images_transformed.shape[0]], 
-                        fill_value=Config.MaxLabelLength, 
+                        fill_value=config.MAX_LABEL_LENGTH, 
                         dtype=torch.long, 
                         device=device)
 
@@ -232,7 +234,7 @@ def train_model(epochs):
 
                     for mode in DecodingMode:
                         process = Process(target=calculate_accuracy, args=(symbols_probabilities, labels, accuracy[mode.value],
-                                                                           accuracy_cer[mode.value], mode, 10, LM,), daemon=True)
+                                                                           accuracy_cer[mode.value], mode, 25, LM,), daemon=True)
                         processes.append(process)
                         process.start()
 
@@ -270,31 +272,32 @@ def train_model(epochs):
                   mean_accuracy_beam_search_value, mean_accuracy_beam_search_value_cer,
                   mean_accuracy_beam_search_with_LM_value, mean_accuracy_beam_search_with_LM_value_cer,
                   mean_loss_value, file=log_file_out, sep=',')
-            print(
-                f"Testing, Epoch {epoch}, accuracy_best_path {mean_accuracy_best_path_value}, accuracy_best_path_cer {mean_accuracy_best_path_value_cer}, \
-                        accuracy_beam_search {mean_accuracy_beam_search_value}, accuracy_beam_search_cer {mean_accuracy_beam_search_value_cer}, \
-                        accuracy_beam_search_with_LM {mean_accuracy_beam_search_with_LM_value}, accuracy_beam_search_with_LM_cer {mean_accuracy_beam_search_with_LM_value_cer}, \
-                        loss {mean_loss_value}.")
+            print(f"Testing, Epoch {epoch}, accuracy_best_path {mean_accuracy_best_path_value},", end=' ')
+            print(f"accuracy_best_path_cer {mean_accuracy_best_path_value_cer},", end=' ')
+            print(f"accuracy_beam_search {mean_accuracy_beam_search_value},", end=' ')
+            print(f"accuracy_beam_search_cer {mean_accuracy_beam_search_value_cer},", end=' ')
+            print(f"accuracy_beam_search_with_LM {mean_accuracy_beam_search_with_LM_value},", end=' ')
+            print(f"accuracy_beam_search_with_LM_cer {mean_accuracy_beam_search_with_LM_value_cer},", end=' ')
+            print(f"loss {mean_loss_value}.")
 
             net.save(step, epoch, optimizer.state_dict())
 
 
 def predict(
         symbols_probabilities:torch.Tensor,
-        device:torch.Tensor, 
         mode:DecodingMode, 
         LM:LanguageModel=None):
     if mode == DecodingMode.BestPath:
         for symbols_probability in symbols_probabilities:
-            word_embedding = best_path_decoding(symbols_probability, device)
+            word_embedding = best_path_decoding(symbols_probability)
     elif mode == DecodingMode.BeamSearch:
         for symbols_probability in symbols_probabilities:
             word_embedding = beam_search_decoding(
-                symbols_probability, 20, device)
+                symbols_probability, 25)
     elif mode == DecodingMode.BeamSearchLM:
         for symbols_probability in symbols_probabilities:
             word_embedding = beam_search_decoding_with_LM(
-                symbols_probability, LM, 20, device)
+                symbols_probability, LM, 25)
     return word_embedding
 
 
@@ -302,16 +305,16 @@ def test_model(file_path:str):
     device,_ = MakeInitialSetup()
     image = torchvision.io.read_image(file_path,
                                       torchvision.io.ImageReadMode.GRAY).to(torch.float)
-    image = preprocess_image(image, Config.ImageHeight, Config.ImageWidth)
+    image = preprocess_image(image, config.IMAGE_HEIGHT, config.IMAGE_WIDTH)
     image -= torch.mean(image)
     image_std = torch.std(image)
     image = image / image_std if image_std > 0 else image
     image = image.to(device)
     image.unsqueeze_(dim=0)
 
-    LM = LanguageModel(Config.DataPath, Config.TextFile)
+    LM = LanguageModel(config.DATA_PATH, config.TEXT_FILE)
 
-    parameters_file = join(Config.DataPath, Config.SavedParameters)
+    parameters_file = join(config.DATA_PATH, config.SAVED_PARAMETERS)
     net = SimpleHTR(parameters_file, device).to(device)
 
     net.load_previous_state(torch.load(parameters_file))
@@ -323,10 +326,10 @@ def test_model(file_path:str):
 
         for mode in DecodingMode:
             word_embedding = predict(
-                symbols_probabilities, device, mode, LM)
+                symbols_probabilities, mode, LM)
             word = ''
             for t in word_embedding:
-                word += Config.CharsInd[t]
+                word += config.INDEXES_TO_TERMINALS[t]
             print(f"Recognized word is \"{word}\" by {mode}")
 
 

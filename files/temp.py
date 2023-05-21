@@ -15,11 +15,11 @@ cer_2 = char_error_rate([output], [ref]).item()
 print(cer_2)
 """
 from main import convert_to_word
-from DataNormalizer import preprocess_image
-from Model import SimpleHTR
-import Config
-from LanguageModel import LanguageModel
-from Decoding import DecodingMode, best_path_decoding, beam_search_decoding, beam_search_decoding_with_LM
+from data_normalizer import preprocess_image
+from model import SimpleHTR
+import config
+from language_model import LanguageModel
+from decoding import *
 
 from multiprocessing import Process, Value
 from torchvision.io import read_image, ImageReadMode
@@ -83,15 +83,15 @@ if __name__=='__main__':
     torch.cuda.manual_seed(0)
 
     image = read_image('.\city.png', ImageReadMode.GRAY).to(torch.float)
-    image = preprocess_image(image, Config.ImageHeight, Config.ImageWidth)
+    image = preprocess_image(image, config.IMAGE_HEIGHT, config.IMAGE_WIDTH)
     image -= torch.mean(image)
     image_std = torch.std(image)
     image = image / image_std if image_std > 0 else image
     image = image.to(device)
     image.unsqueeze_(dim=0)
 
-    LM = LanguageModel(Config.DataPath, Config.TextFile)
-    parameters_file = join(Config.DataPath, Config.SavedParameters)
+    LM = LanguageModel(config.DATA_PATH, config.TEXT_FILE)
+    parameters_file = join(config.DATA_PATH, config.SAVED_PARAMETERS)
 
     net = SimpleHTR(parameters_file, device).to(device)
     net.load_previous_state(torch.load(parameters_file))
@@ -104,9 +104,9 @@ if __name__=='__main__':
 
     word = 'Manchester'
 
-    label = torch.zeros(size=(Config.MaxLabelLength,), dtype=torch.long, device=device)
+    label = torch.zeros(size=(config.MAX_LABEL_LENGTH,), dtype=torch.long, device=device)
     for ind, symbol in enumerate(word):
-        label[ind] = Config.MapTable[symbol]
+        label[ind] = config.TERMINALS_TO_INDEXES[symbol]
     label.unsqueeze_(dim=0)
     print(label)
 

@@ -2,14 +2,12 @@ import torch
 from torchvision.io import read_image, ImageReadMode
 from os.path import join
 from torch.utils.data import Dataset
-from enum import Enum
 
-import Config
+import config
+
 
 class Sample:
-    """
-        Store samples for neural network
-    """
+    """Stores sample for neural network."""
     def __init__(self, path, label, length):
         self.path = path
         self.label = label
@@ -17,13 +15,13 @@ class Sample:
 
 class CustomDataLoader(Dataset):
     """
-        Custom data loader that provides access to the required data.
+    Provides access to the required data.
+    Should be used only in Dataloader.
     """
-    def __init__(self, dir_path, labels_file):
+    def __init__(self, dir_path:str, labels_file:str) -> None:
         self.samples = list()
         self.image_mean = list()
         self.image_std = list()
-
         labels_file = join(dir_path, labels_file)
 
         with open(labels_file, 'r') as samples_file:
@@ -34,18 +32,18 @@ class CustomDataLoader(Dataset):
 
                 length = len(label)
                 label_embedding = torch.zeros(
-                    Config.MaxLabelLength, dtype=torch.long)
+                    config.MAX_LABEL_LENGTH, dtype=torch.long)
                 for i, symbol in enumerate(label):
-                    label_embedding[i] = Config.MapTable[symbol]
+                    label_embedding[i] = config.TERMINALS_TO_INDEXES[symbol]
 
                 self.samples.append(Sample(line[0], label_embedding, length))
                 self.image_mean.append(float(line[1]))
                 self.image_std.append(float(line[2]))
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.samples)
 
-    def __getitem__(self, ind):
+    def __getitem__(self, ind:int) -> tuple:
         sample = self.samples[ind]
         image = read_image(join('..', sample.path), ImageReadMode.GRAY).to(torch.float)
 
@@ -56,14 +54,22 @@ class CustomDataLoader(Dataset):
 
 
 class SimpleHTR(torch.nn.Module):
-    def __init__(self, parameters_file, device=torch.device('cpu')):
+    """Simple Handwriteen Text Recognition System."""
+    def __init__(self, 
+                 parameters_file:str, 
+                 device:torch.device=torch.device('cpu')) -> None:
+        """
+        Keyword arguments:
+        parameters_file: file, where all weights are stored
+        device: device on which all computations should be done
+        """
         super(SimpleHTR, self).__init__()
         self.used_device = device
         self.parameters_file = parameters_file
-        self.setCNN()
-        self.setRNN()
+        self.__setCNN()
+        self.__setRNN()
 
-    def setCNN(self):
+    def __setCNN(self):
 
         self.layer1 = torch.nn.Sequential(torch.nn.Conv2d(in_channels=1, out_channels=32, kernel_size=5, padding='same'),
                                           torch.nn.ReLU(), torch.nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2), padding=0))
@@ -81,7 +87,7 @@ class SimpleHTR(torch.nn.Module):
                                           torch.nn.ReLU(), torch.nn.MaxPool2d(kernel_size=(2, 1), stride=(2, 1), padding=0))
 
 
-    def forwardCNN(self, x):
+    def __forwardCNN(self, x:torch.Tensor):
         x = self.layer1(x)
         x = self.layer2(x)
         x = self.layer3(x)
@@ -90,15 +96,15 @@ class SimpleHTR(torch.nn.Module):
         return x
 
 
-    def setRNN(self):
+    def __setRNN(self):
         HiddenNum = 256
         self.rnn = torch.nn.LSTM(
             input_size=HiddenNum, hidden_size=HiddenNum, num_layers=2, batch_first=True, bidirectional=True)
         
         self.filter = torch.nn.init.trunc_normal_(torch.empty(
-            (Config.CharNum + 1, 2 * HiddenNum, 1, 1)), std=0.1).to(self.used_device)
+            (config.TERMINALS_NUMBER + 1, 2 * HiddenNum, 1, 1)), std=0.1).to(self.used_device)
 
-    def forwardRNN(self, x):
+    def __forwardRNN(self, x:torch.Tensor):
         x = x.squeeze(dim=2).transpose(1, -1)
  
         x, (_, _) = self.rnn(x)
@@ -107,16 +113,28 @@ class SimpleHTR(torch.nn.Module):
         x = torch.nn.functional.conv2d(x, self.filter, padding='same').squeeze(dim=-1)
         return x
 
-    def forward(self, images):
-        images = self.forwardCNN(images)
-        images = self.forwardRNN(images)
+    def forward(self, images:torch.Tensor) -> torch.Tensor:
+        """
+        Applies all layers to the passed batch.
+
+        Keyword arguments:
+        images: batch of images of size Bx1xHxW, where B - number of elements in batch,
+                H - height of all images, W - width of all images in the batch
+        
+        Return value:
+        Batch of the images of size BxCxT
+        """
+        images = self.__forwardCNN(images)
+        images = self.__forwardRNN(images)
         return images
     
-    def load_previous_state(self, state : dict):
+    def load_previous_state(self, state : dict) -> None:
+        '''Loades stored weights.'''
         self.load_state_dict(state['state_dict'])
         self.filter = state['filter']
     
-    def save(self, step, epoch, optimizer_state_dict):
+    def save(self, step:int, epoch:int, optimizer_state_dict:dict) -> None:
+        '''Saves model's parameters.'''
         state = {
             'epoch': epoch,
             'step':step,

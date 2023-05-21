@@ -4,14 +4,12 @@ from collections import defaultdict
 import numpy as np
 from math import inf
 
-import threading
+import config
+from language_model import LanguageModel
 
-import Config
-
-
-from LanguageModel import LanguageModel
 
 class DecodingMode(Enum):
+    """Stores diferent decoding modes."""
     BestPath = 0
     BeamSearch = 1
     BeamSearchLM = 2
@@ -20,22 +18,40 @@ class DecodingMode(Enum):
         return super().__len__()
 
 
-def best_path_decoding(symbols_probability:torch.Tensor):
+def best_path_decoding(symbols_probability:torch.Tensor) -> torch.Tensor:
+    """
+    Implements best path decoding method to the probabilities matrix.
+
+    Keyword arguments:
+    symbols_probability: matrix of size CxT, where C - capacity of multiple terminals,
+                         T - number of time-staps
+                
+    Return value:
+    A recognized word coded with the config.MapTable
+    """
     most_probable_symbols = torch.argmax(symbols_probability, dim=0)
     most_probable_label = torch.unique_consecutive(most_probable_symbols)
     most_probable_label = most_probable_label[most_probable_label != 0]
 
     new_label = torch.zeros(
-        size=(Config.MaxLabelLength,), dtype=torch.long)
+        size=(config.MAX_LABEL_LENGTH,), dtype=torch.long)
     new_label[:most_probable_label.shape[0]] = most_probable_label
 
     return new_label
 
-def beam_search_decoding(
-        symbols_probability:torch.Tensor, 
-        beam_width:int=3):
+
+def beam_search_decoding(symbols_probability:torch.Tensor, 
+                         beam_width:int=10) -> torch.Tensor:
     """
-        Implements beam search decoding approach to the probabilities matrix
+    Implements beam search decoding method to the probabilities matrix.
+
+    Keyword arguments:
+    symbols_probability: matrix of size CxT, where C - capacity of multiple terminals,
+                         T - number of time-staps
+    beam_width: number of beams being stored on each iteration (default 10)
+                
+    Return value:
+    A recognized word coded with the config.MapTable
     """
     blank_idx = 0
     not_probable = -10.
@@ -98,18 +114,28 @@ def beam_search_decoding(
     word = sorted(beams.keys(), reverse=True,
                   key=lambda beam: beams[beam].total_probability)[0]
     word_embedding = torch.zeros(
-        size=(Config.MaxLabelLength,), dtype=torch.long)
+        size=(config.MAX_LABEL_LENGTH,), dtype=torch.long)
     word_embedding[:len(word)] = torch.LongTensor(word)
     return word_embedding
 
 
-def beam_search_decoding_with_LM(
-        symbols_probability:torch.Tensor, 
-        LM:LanguageModel, 
-        beam_width:int=3):
+def beam_search_decoding_with_LM(symbols_probability:torch.Tensor, 
+                                 language_model:LanguageModel, 
+                                 beam_width:int=10) -> torch.Tensor:
+    """
+    Implements beam search decoding method with language model to the probabilities matrix.
+
+    Keyword arguments:
+    symbols_probability: matrix of size CxT, where C - capacity of multiple terminals,
+                         T - number of time-staps
+    language_model: language model build according to the dataset
+    beam_width: number of beams being stored on each iteration (default 10)
+                
+    Return value:
+    A recognized word coded with the config.MapTable
+    """
     blank_idx = 0
     not_probable = -10.
-    LM_influence = 0.1
 
     class BeamInfo:
         def __init__(self):
@@ -179,12 +205,14 @@ def beam_search_decoding_with_LM(
                 current_beams[new_beam].LM_applied = True
 
                 if len(new_beam) == 1:
-                    probability = LM.get_single_probability(new_beam[-1])
+                    probability = language_model.get_single_probability(
+                        new_beam[-1])
                 else:
-                    probability = LM.get_relative_probability(new_beam[-2], new_beam[-1])
+                    probability = language_model.get_relative_probability(
+                        new_beam[-2], new_beam[-1])
                 with np.errstate(divide='ignore'):
                     current_beams[new_beam].word_probability = beams[beam].word_probability + \
-                        LM_influence * np.log(float(probability))
+                        config.LM_INFLUENCE * np.log(float(probability))
 
         beams = current_beams
 
@@ -193,6 +221,6 @@ def beam_search_decoding_with_LM(
                   max(len(beam), 1.))[0]
     
     word_embedding = torch.zeros(
-        size=(Config.MaxLabelLength,), dtype=torch.long)
+        size=(config.MAX_LABEL_LENGTH,), dtype=torch.long)
     word_embedding[:len(word)] = torch.LongTensor(word)
     return word_embedding

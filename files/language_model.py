@@ -1,10 +1,11 @@
 import pandas as pd
 from os.path import join, isfile
-import Config
+
+import config
 
 class LanguageModel:
     def __init__(self, data_path, text_file):
-        self.csv_file = join(data_path, Config.LMTable)
+        self.csv_file = join(data_path, config.LM_TABLE)
         if not isfile(self.csv_file):
             first_letter = dict()
             letter_ratio = dict()
@@ -34,7 +35,7 @@ class LanguageModel:
                     letter_ratio[prev][next] /= rel_prev_number
 
             self.table = pd.DataFrame(
-                index=Config.CharsInd[1:], columns=Config.CharsInd[1:])
+                index=config.INDEXES_TO_TERMINALS[1:], columns=config.INDEXES_TO_TERMINALS[1:])
             for prev in letter_ratio:
                 self.table.loc[prev, :].update(letter_ratio[prev])
 
