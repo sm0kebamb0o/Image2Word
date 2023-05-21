@@ -6,8 +6,8 @@ In order to train the model you make some initial setup:
 * Download IAM dataset with words and store it in a directory called "data\words";
 * Save "words.txt" file (that you would find at the same web-page) at the same directory;
 * Run data_normalizer.py;
-Now you are ready to use this __awesome__ network :)
+Now you are ready to use this __awesome__ network :wink:
 
 ## Command line arguments
-* --train <**_number_of_epochs_**>
-* --test <**_relative_path_to_the_image_**>
+* `--train` <**_number_of_epochs_**>
+* `--test` <**_relative_path_to_the_image_**>
