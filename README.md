@@ -1,5 +1,5 @@
 # SimpleHTR now on PyTorch
-Simple Handwritten Text Recognition system implemented using PyTorch. Model could properly work on both GPU and CPU. Accuracy of the recognition is about 80% (fully recognized words) and character_error_rate is lower than 10%, however this parameters depends on the decoding method you choose.
+Simple Handwritten Text Recognition system implemented using PyTorch. Model could properly work on both GPU and CPU. Accuracy of the recognition is about 70% (fully recognized words) and character_error_rate is lower than 10%, however this parameters depends on the decoding method you choose.
 
 ## Training
 In order to train the model you should make some initial setup:
@@ -14,6 +14,6 @@ Necessary (one of them):
 * `--train` <**_number_of_epochs_**>
 * `--test` <**_relative_path_to_the_image_**>
 
-Optional:
+Optional (should be used only for testing):
 * `--beam_width` <**_value_**>
 * `--lm_inluence` <**_value_** $\in$ (0; 1]>

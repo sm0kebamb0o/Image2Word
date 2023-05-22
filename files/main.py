@@ -120,7 +120,7 @@ def train_model(epochs):
         state = torch.load(parameters_file)
         net.load_previous_state(state)
         optimizer.load_state_dict(state['optimizer'])
-        epoch_start = state['epoch']
+        epoch_start = state['epoch'] + 1
         step_start = state['step']
 
     # will be used in CTCLoss
@@ -234,7 +234,7 @@ def train_model(epochs):
 
                     for mode in DecodingMode:
                         process = Process(target=calculate_accuracy, args=(symbols_probabilities, labels, accuracy[mode.value],
-                                                                           accuracy_cer[mode.value], mode, 25, LM,), daemon=True)
+                                                                           accuracy_cer[mode.value], mode, 35, LM,), daemon=True)
                         processes.append(process)
                         process.start()
 
