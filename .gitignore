@@ -1,6 +1,8 @@
-data/
+data/*
 !data/weights.pth
 !data/results.csv
+!data/corpus.txt
+!data/labels.txt
 
 files/__pycache__/
 files/*.png
