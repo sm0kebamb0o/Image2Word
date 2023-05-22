@@ -121,7 +121,8 @@ def beam_search_decoding(symbols_probability:torch.Tensor,
 
 def beam_search_decoding_with_LM(symbols_probability:torch.Tensor, 
                                  language_model:LanguageModel, 
-                                 beam_width:int=10) -> torch.Tensor:
+                                 beam_width:int=10,
+                                 lm_influence:float=config.LM_INFLUENCE) -> torch.Tensor:
     """
     Implements beam search decoding method with language model to the probabilities matrix.
 
@@ -212,7 +213,7 @@ def beam_search_decoding_with_LM(symbols_probability:torch.Tensor,
                         new_beam[-2], new_beam[-1])
                 with np.errstate(divide='ignore'):
                     current_beams[new_beam].word_probability = beams[beam].word_probability + \
-                        config.LM_INFLUENCE * np.log(float(probability))
+                        lm_influence * np.log(float(probability))
 
         beams = current_beams
 

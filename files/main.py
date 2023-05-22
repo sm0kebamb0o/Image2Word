@@ -140,7 +140,7 @@ def train_model(epochs):
                 input_lengths = torch.full(
                     size=[images_transformed.shape[0]], 
                     fill_value=config.MAX_LABEL_LENGTH, 
-                    dtype=torch.long, device=device)
+                    dtype=torch.int32, device=device)
 
                 symbols_probabilities = torch.permute(
                     images_transformed, (2, 0, 1))
@@ -209,7 +209,7 @@ def train_model(epochs):
                     input_lengths = torch.full(
                         size=[images_transformed.shape[0]], 
                         fill_value=config.MAX_LABEL_LENGTH, 
-                        dtype=torch.long, 
+                        dtype=torch.int32, 
                         device=device)
 
                     symbols_probabilities = torch.permute(
@@ -286,22 +286,24 @@ def train_model(epochs):
 def predict(
         symbols_probabilities:torch.Tensor,
         mode:DecodingMode, 
-        LM:LanguageModel=None):
+        LM:LanguageModel=None,
+        beam_width:int=25,
+        lm_influence:float=config.LM_INFLUENCE):
     if mode == DecodingMode.BestPath:
         for symbols_probability in symbols_probabilities:
             word_embedding = best_path_decoding(symbols_probability)
     elif mode == DecodingMode.BeamSearch:
         for symbols_probability in symbols_probabilities:
             word_embedding = beam_search_decoding(
-                symbols_probability, 25)
+                symbols_probability, beam_width)
     elif mode == DecodingMode.BeamSearchLM:
         for symbols_probability in symbols_probabilities:
             word_embedding = beam_search_decoding_with_LM(
-                symbols_probability, LM, 25)
+                symbols_probability, LM, beam_width, lm_influence)
     return word_embedding
 
 
-def test_model(file_path:str):
+def test_model(file_path:str, beam_width:int=25, lm_influence:float=config.LM_INFLUENCE):
     device,_ = MakeInitialSetup()
     image = torchvision.io.read_image(file_path,
                                       torchvision.io.ImageReadMode.GRAY).to(torch.float)
@@ -326,7 +328,7 @@ def test_model(file_path:str):
 
         for mode in DecodingMode:
             word_embedding = predict(
-                symbols_probabilities, mode, LM)
+                symbols_probabilities, mode, LM, beam_width, lm_influence)
             word = ''
             for t in word_embedding:
                 word += config.INDEXES_TO_TERMINALS[t]
@@ -334,9 +336,67 @@ def test_model(file_path:str):
 
 
 if __name__=='__main__':
+    if len(sys.argv) < 3 or len(sys.argv) % 2 == 0:
+        print("Check the required command line line arguments.")
+        exit()
     mode = sys.argv[1]
     if mode=='--train':
-        train_model(int(sys.argv[2]))
+        try:
+            epoch_number = int(sys.argv[2])
+        except ValueError:
+            print("The second argument should be integer.")
+            exit()
+        train_model(epoch_number)
     elif mode=='--test':
         file_path = sys.argv[2]
-        test_model(file_path)
+        if not isfile(file_path):
+            print('No such file existed.')
+            exit()
+        if len(sys.argv) == 7:
+            if sys.argv[3] == '--beam_width':
+                try:
+                    beam_width = int(sys.argv[4])
+                except ValueError:
+                    print('Argument after --beam_width should be integer.')
+                    exit()
+                try:
+                    lm_influence = float(sys.argv[6])
+                except ValueError:
+                    print('Argument after --lm_inluence should be integer.')
+                    exit()
+            elif sys.argv[3] == '--lm_influence':
+                try:
+                    beam_width = int(sys.argv[6])
+                except ValueError:
+                    print('Argument after --beam_width should be integer.')
+                    exit()
+                try:
+                    lm_influence = float(sys.argv[4])
+                except ValueError:
+                    print('Argument after --lm_inluence should be integer.')
+                    exit()
+            else:
+                print("Check possible command line arguments.")
+                exit()
+            test_model(file_path, beam_width=beam_width,
+                       lm_influence=lm_influence)
+        else:
+            if sys.argv[3] == '--beam_width':
+                try:
+                    beam_width = int(sys.argv[4])
+                except ValueError:
+                    print('Argument after --beam_width should be integer.')
+                    exit()
+                lm_influence=config.LM_INFLUENCE
+            elif sys.argv[3] == '--lm_influence':
+                try:
+                    lm_influence = float(sys.argv[4])
+                except ValueError:
+                    print('Argument after --lm_inluence should be integer.')
+                    exit()
+                beam_width=25
+            else:
+                print("Check possible command line arguments.")
+                exit()
+            test_model(file_path, beam_width=beam_width,
+                       lm_influence=lm_influence)

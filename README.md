@@ -10,5 +10,9 @@ In order to train the model you should make some initial setup:
 Now you are ready to use this __awesome__ network :wink:
 
 ## Command line arguments
+Necessary:
 * `--train` <**_number_of_epochs_**>
 * `--test` <**_relative_path_to_the_image_**>
+Optional:
+* `--beam_width` <**_value_**>
+* `--lm_inluence` <**_value_** $\in$ (0; 1]>

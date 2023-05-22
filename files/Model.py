@@ -32,7 +32,7 @@ class CustomDataLoader(Dataset):
 
                 length = len(label)
                 label_embedding = torch.zeros(
-                    config.MAX_LABEL_LENGTH, dtype=torch.long)
+                    config.MAX_LABEL_LENGTH, dtype=torch.int32)
                 for i, symbol in enumerate(label):
                     label_embedding[i] = config.TERMINALS_TO_INDEXES[symbol]
 
