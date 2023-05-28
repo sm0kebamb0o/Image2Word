@@ -17,4 +17,4 @@ Necessary (one of them):
 Optional (should be used only for testing):
 * `-n`, `--new` <**should be used when testing your own images**>
 * `-b`, `--beam_width` <**required beam width in decoding**>
-* `--lm_inluence` <**required language model influence in decoding $\in$ (0; 1]**>
+* `-lm`, `--lm_inluence` <**required language model influence in decoding $\in$ (0; 1]**>
