@@ -1,6 +1,6 @@
-# imports
 import torch
-import torchvision
+import argparse
+import cv2 as cv
 import numpy as np
 from torch.utils.data import DataLoader, random_split
 from torchmetrics.functional import char_error_rate
@@ -14,7 +14,8 @@ import config
 from language_model import LanguageModel
 from data_normalizer import preprocess_image
 
-def MakeInitialSetup():
+
+def make_initial_setup():
     if torch.cuda.is_available():
         device = torch.device('cuda')
         data_loader_args = {'num_workers': 1, 'pin_memory': True}
@@ -27,7 +28,7 @@ def MakeInitialSetup():
     return device, data_loader_args
 
 
-def CreateDataLoaders(
+def create_data_loaders(
         data_path:str, 
         labels_file:str, 
         testing_percent:float, 
@@ -46,6 +47,7 @@ def CreateDataLoaders(
     test_loader = DataLoader(test, batch_size=batch_size,
                              shuffle=False, **data_loader_args)
     return train_loader, test_loader
+
 
 def convert_to_word(word_embedding:torch.Tensor)->str:
     word = ''
@@ -100,14 +102,13 @@ def calculate_accuracy(symbols_probabilities: torch.Tensor,
 
 
 def train_model(epochs):
-    device, data_loader_args = MakeInitialSetup()
-    train_loader, test_loader = CreateDataLoaders(config.DATA_PATH, config.LABELS_FILE,
+    device, data_loader_args = make_initial_setup()
+    train_loader, test_loader = create_data_loaders(config.DATA_PATH, config.LABELS_FILE,
                                                   config.TESTING_PERCENT, config.BATCH_SIZE,
                                                   data_loader_args)
     parameters_file = join(config.DATA_PATH, config.SAVED_PARAMETERS)
     log_file = join(config.DATA_PATH, config.LOG_FILE)
 
-    # Experiments
     net = SimpleHTR(parameters_file, device).to(device)
     LM = LanguageModel(config.DATA_PATH, config.TEXT_FILE)
     optimizer = torch.optim.Adam(net.parameters(), lr=config.LEARNING_RATE)
@@ -122,8 +123,6 @@ def train_model(epochs):
         optimizer.load_state_dict(state['optimizer'])
         epoch_start = state['epoch'] + 1
         step_start = state['step']
-
-    # will be used in CTCLoss
 
     with open(log_file, 'a') as log_file_out:
         if not step_start:
@@ -303,16 +302,24 @@ def predict(
     return word_embedding
 
 
-def test_model(file_path:str, beam_width:int=25, lm_influence:float=config.LM_INFLUENCE):
-    device,_ = MakeInitialSetup()
-    image = torchvision.io.read_image(file_path,
-                                      torchvision.io.ImageReadMode.GRAY).to(torch.float)
+def test_model(file_path:str, new:bool, beam_width:int=25, lm_influence:float=config.LM_INFLUENCE):
+    device,_ = make_initial_setup()
+    image = cv.imread(file_path, cv.IMREAD_GRAYSCALE) 
+
+    if new:
+        image = cv.dilate(image, kernel=np.ones((3, 3), np.uint8), iterations=3)
+        image = cv.erode(image, kernel=np.ones((5, 5), np.uint8), iterations=2)
+        # image = cv.threshold(image, 0, 255, cv.THRESH_BINARY+cv.THRESH_OTSU)[1]
+
+    image = torch.FloatTensor(image)
+    image.unsqueeze_(dim=0)
     image = preprocess_image(image, config.IMAGE_HEIGHT, config.IMAGE_WIDTH)
+
     image -= torch.mean(image)
     image_std = torch.std(image)
     image = image / image_std if image_std > 0 else image
-    image = image.to(device)
     image.unsqueeze_(dim=0)
+    image = image.to(device)
 
     LM = LanguageModel(config.DATA_PATH, config.TEXT_FILE)
 
@@ -335,68 +342,50 @@ def test_model(file_path:str, beam_width:int=25, lm_influence:float=config.LM_IN
             print(f"Recognized word is \"{word}\" by {mode}")
 
 
+def create_parser():
+    parser = argparse.ArgumentParser(description='Simple Text Recognition System now on Pytorch!',
+                                     epilog='(c) Mamedov Timur 2023. Moscow State University.')
+    subparsers = parser.add_subparsers(dest='mode')
+
+    train_parser = subparsers.add_parser('train')
+    train_parser.add_argument('epochs', 
+                              type=int,
+                              help='The required number of epochs in training')
+
+    test_parser = subparsers.add_parser('test')
+    test_parser.add_argument('file_path',
+                             help='The relative path to the required image')
+    test_parser.add_argument('-n', 
+                             '--new', 
+                             action='store_true', 
+                             default=False,
+                             help='Should be used when you are passing your own image')
+    test_parser.add_argument('-b', 
+                             '--beam_width', 
+                             type=int, 
+                             default=25,
+                             help='The required beam width in decoding',
+                             metavar='VALUE')
+    test_parser.add_argument('-lm', 
+                             '--lm_influence',
+                             type=float, 
+                             default=config.LM_INFLUENCE,
+                             help='The required language model influence in decoding',
+                             metavar='VALUE')
+
+    return parser
+
+
 if __name__=='__main__':
-    if len(sys.argv) < 3 or len(sys.argv) % 2 == 0:
-        print("Check the required command line line arguments.")
-        exit()
-    mode = sys.argv[1]
-    if mode=='--train':
-        try:
-            epoch_number = int(sys.argv[2])
-        except ValueError:
-            print("The second argument should be integer.")
-            exit()
-        train_model(epoch_number)
-    elif mode=='--test':
-        file_path = sys.argv[2]
-        if not isfile(file_path):
-            print('No such file existed.')
-            exit()
-        if len(sys.argv) == 7:
-            if sys.argv[3] == '--beam_width':
-                try:
-                    beam_width = int(sys.argv[4])
-                except ValueError:
-                    print('Argument after --beam_width should be integer.')
-                    exit()
-                try:
-                    lm_influence = float(sys.argv[6])
-                except ValueError:
-                    print('Argument after --lm_inluence should be integer.')
-                    exit()
-            elif sys.argv[3] == '--lm_influence':
-                try:
-                    beam_width = int(sys.argv[6])
-                except ValueError:
-                    print('Argument after --beam_width should be integer.')
-                    exit()
-                try:
-                    lm_influence = float(sys.argv[4])
-                except ValueError:
-                    print('Argument after --lm_inluence should be integer.')
-                    exit()
-            else:
-                print("Check possible command line arguments.")
-                exit()
-            test_model(file_path, beam_width=beam_width,
-                       lm_influence=lm_influence)
-        else:
-            if sys.argv[3] == '--beam_width':
-                try:
-                    beam_width = int(sys.argv[4])
-                except ValueError:
-                    print('Argument after --beam_width should be integer.')
-                    exit()
-                lm_influence=config.LM_INFLUENCE
-            elif sys.argv[3] == '--lm_influence':
-                try:
-                    lm_influence = float(sys.argv[4])
-                except ValueError:
-                    print('Argument after --lm_inluence should be integer.')
-                    exit()
-                beam_width=25
-            else:
-                print("Check possible command line arguments.")
-                exit()
-            test_model(file_path, beam_width=beam_width,
-                       lm_influence=lm_influence)
+    parser = create_parser()
+    namespace = parser.parse_args(sys.argv[1:])
+
+    if namespace.mode == 'train':
+        train_model(namespace.epochs)
+    elif namespace.mode == 'test':
+        test_model(namespace.file_path, 
+                   new=namespace.new, 
+                   beam_width=namespace.beam_width, 
+                   lm_influence=namespace.lm_influence)
+    else:
+        print("Check a list of possible arguments.")
