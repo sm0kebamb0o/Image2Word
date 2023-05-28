@@ -11,9 +11,10 @@ Now you are ready to use this __awesome__ network :wink:
 
 ## Command line arguments
 Necessary (one of them):
-* `--train` <**_number_of_epochs_**>
-* `--test` <**_relative_path_to_the_image_**>
+* `train` <**required number of epochs in training**>
+* `test` <**relative path to the required image**>
 
 Optional (should be used only for testing):
-* `--beam_width` <**_value_**>
-* `--lm_inluence` <**_value_** $\in$ (0; 1]>
+* `-n`, `--new` <**should be used when testing your own images**>
+* `-b`, `--beam_width` <**required beam width in decoding**>
+* `--lm_inluence` <**required language model influence in decoding $\in$ (0; 1]**>
