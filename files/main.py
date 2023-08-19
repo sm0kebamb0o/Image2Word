@@ -12,7 +12,7 @@ from model import CustomDataLoader, SimpleHTR
 from decoding import *
 import config
 from language_model import LanguageModel
-from data_normalizer import preprocess_image
+from preprocessing import preprocess_image
 
 
 def make_initial_setup():
@@ -330,6 +330,12 @@ def test_model(file_path:str, new:bool, beam_width:int=25, lm_influence:float=co
     net.eval()
     with torch.no_grad():
         image_preds = net.forward(image)
+
+        import matplotlib.pyplot as plt
+
+        plt.imshow(torch.nn.functional.softmax(image_preds, dim=1)[0,:,:].detach().cpu())
+        plt.show()
+
         symbols_probabilities = torch.nn.functional.log_softmax(
             input=image_preds, dim=1)
 
@@ -337,8 +343,7 @@ def test_model(file_path:str, new:bool, beam_width:int=25, lm_influence:float=co
             word_embedding = predict(
                 symbols_probabilities, mode, LM, beam_width, lm_influence)
             word = ''
-            for t in word_embedding:
-                word += config.INDEXES_TO_TERMINALS[t]
+            word = convert_to_word(word_embedding)
             print(f"Recognized word is \"{word}\" by {mode}")
 
 

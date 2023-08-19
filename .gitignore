@@ -3,7 +3,11 @@ data/*
 !data/results.csv
 !data/corpus.txt
 !data/labels.txt
+!data/words.txt
 
 files/__pycache__/
 files/*.png
 files/temp.py
+files/preproccesing.ipynb
+files/samples/
+files/b.py

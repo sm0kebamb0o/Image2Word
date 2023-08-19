@@ -80,7 +80,7 @@ def beam_search_decoding(symbols_probability:torch.Tensor,
                 non_blank_ending_probability = beams[beam].non_blank_ending_probability + \
                     symbols_probability[beam[-1], t].item()
             else:
-                non_blank_ending_probability = -inf
+                non_blank_ending_probability = float('-inf')
 
             # blank ending
             blank_ending_probability = beams[beam].total_probability + \

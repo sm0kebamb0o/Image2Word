@@ -1,11 +1,17 @@
-MAX_LABEL_LENGTH = 32
-IMAGE_HEIGHT = 32
-IMAGE_WIDTH = 128
+### Do not change this parameters ###
+MAX_LABEL_LENGTH = 100
+IMAGE_HEIGHT = 64
+IMAGE_WIDTH = 800
+#####################################
 
 DATA_PATH = '..\data'
 RAW_LABELS_FILE = 'words.txt'
 LABELS_FILE = 'labels.txt'
+TEST_FILE = 'test.txt'
+VAL_FILE = 'val.txt'
+TRAIN_FILE = 'train.txt'
 
+PARAMS_FOLDER = '.\params'
 TEXT_FILE = 'corpus.txt'
 LM_TABLE = 'LMTable.csv'
 
@@ -33,8 +39,9 @@ INDEXES_TO_TERMINALS = ['', 'A', 'M', 'O', 'V', 'E', 't', 'o', 's', 'p', 'r', '.
             'J', 'Y', '7', ';', 'z', 'Z', '6', '?', '*', 'X', 'Q', '!', '/',
             '&', '+']
 
-TESTING_PERCENT = 0.003
-BATCH_SIZE = 50
+TESTING_PERCENT = 0.1
+VALIDATION_PERCENT = 0.2
+BATCH_SIZE = 32
 
 SAVED_PARAMETERS = 'weights.pth'
 LOG_FILE = 'results.csv'
