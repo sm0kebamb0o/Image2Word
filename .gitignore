@@ -8,6 +8,9 @@ data/*
 files/__pycache__/
 files/*.png
 files/temp.py
-files/preproccesing.ipynb
+files/preprocessing.ipynb
 files/samples/
 files/b.py
+files/params/
+
+deslant/

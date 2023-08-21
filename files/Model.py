@@ -4,6 +4,7 @@ from torchvision.io import read_image, ImageReadMode
 import os.path as path
 from torch.utils.data import Dataset, DataLoader
 import datetime
+from tqdm import tqdm
 
 import config
 
@@ -210,7 +211,8 @@ class ModelHandler:
               loss_criteria):
         if not self.recovered_train:
             self.recover(train=True)
-        for epoch in range(self.max_epoch+1, epoch_n+1):
+        bar_format = 'Training: {percentage:3.0f}%|{bar:25}| Epoch {n_fmt}/{total_fmt}, Remainig time {remaining}'
+        for epoch in tqdm(range(self.max_epoch+1, epoch_n+1), bar_format=bar_format):
             mean_train_loss = 0.
             train_batches = 0
             epoch_train_start = datetime.datetime.now()
@@ -249,33 +251,11 @@ class ModelHandler:
                   {(datetime.datetime.now() - epoch_train_start).total_seconds():0.2f} сек')
             print('Среднее значение функции потерь на обучении', mean_train_loss)
 
-            mean_val_loss = 0.
-            val_batches = 0
             epoch_val_start = datetime.datetime.now()
-            self.model.eval()
-            with torch.no_grad():
-                for images, labels, lengths in val_dataloader:
-                    images, labels, lengths = images.to(
-                        self.device), labels.to(self.device), lengths.to(self.device)
-                    images_transformed = self.model.forward(images)
-
-                    input_lengths = torch.full(
-                        size=[images_transformed.shape[0]],
-                        fill_value=config.MAX_LABEL_LENGTH,
-                        dtype=torch.int32,
-                        device=self.device)
-
-                    symbols_probabilities = torch.permute(
-                        images_transformed, (2, 0, 1))
-
-                    loss = loss_criteria(symbols_probabilities, 
-                                         labels,
-                                         input_lengths, 
-                                         lengths)
-                    mean_val_loss += loss.item()
-                    val_batches += 1
-
-            mean_val_loss /= val_batches
+            mean_val_loss = self.evaluate(val_dataloader,
+                                          loss_criteria,
+                                          desc='',
+                                          disable=True)
             print(f'Эпоха: {epoch} [Валидация], \
                   { (datetime.datetime.now() - epoch_val_start).total_seconds():0.2f} сек')
             print('Среднее значение функции потерь на валидации', mean_val_loss)
@@ -286,7 +266,37 @@ class ModelHandler:
                 self.save(epoch=epoch, best=True)
             self.save(epoch=epoch)
         self.max_epoch = epoch_n
+    
+    def evaluate(self, test_dataloader, loss_criteria, desc, disable=False):
+        self.model.eval()
+        mean_test_loss = 0.
+        test_batches = 0
+        bar_format = '{desc}: {percentage:3.0f}%|{bar:25}| Batch {n_fmt}/{total_fmt}'
+        with torch.no_grad():
+            for images, labels, lengths in tqdm(test_dataloader, 
+                                                bar_format=bar_format,
+                                                desc=desc,
+                                                disable=disable):
+                images, labels, lengths = images.to(
+                    self.device), labels.to(self.device), lengths.to(self.device)
+                images_transformed = self.model.forward(images)
+                input_lengths = torch.full(
+                    size=[images_transformed.shape[0]],
+                    fill_value=config.MAX_LABEL_LENGTH,
+                    dtype=torch.int32,
+                    device=self.device)
 
+                symbols_probabilities = torch.permute(
+                    images_transformed, (2, 0, 1))
+
+                loss = loss_criteria(symbols_probabilities,
+                                     labels,
+                                     input_lengths,
+                                     lengths)
+                mean_test_loss += loss.item()
+                test_batches += 1
+        mean_test_loss /= test_batches
+        return mean_test_loss
 
 class Image2Word(nn.Module):
     """Handwriteen Text Recognition System."""

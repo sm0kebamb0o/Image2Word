@@ -61,29 +61,30 @@ def create_parser():
                               type=int,
                               help='The required number of epochs in training')
 
-    test_parser = subparsers.add_parser('predict')
-    test_parser.add_argument('file_path',
+    predict_parser = subparsers.add_parser('predict')
+    predict_parser.add_argument('file_path',
                              help='The relative path to the required image')
     '''
-    test_parser.add_argument('-n',
+    predict_parser.add_argument('-n',
                              '--new',
                              action='store_true',
                              default=False,
                              help='Should be used when you are passing your own image')
     '''
-    test_parser.add_argument('-b',
+    predict_parser.add_argument('-b',
                              '--beam_width',
                              type=int,
                              default=25,
                              help='The required beam width in decoding',
                              metavar='VALUE')
-    test_parser.add_argument('-lm',
+    predict_parser.add_argument('-lm',
                              '--lm_influence',
                              type=float,
                              default=config.LM_INFLUENCE,
                              help='The required language model influence in decoding',
                              metavar='VALUE')
-    stats_parser = subparsers.add_parser('stats')
+    _ = subparsers.add_parser('stats')
+    _ = subparsers.add_parser('eval')
 
     return parser
 
@@ -165,11 +166,11 @@ if __name__=='__main__':
                                    reduction='mean')
         
         train_loader, val_loader, _ = create_data_loaders(data_path=config.DATA_PATH,
-                                                                    train_file=config.TRAIN_FILE,
-                                                                    val_file=config.VAL_FILE,
-                                                                    test_file=config.TEST_FILE,
-                                                                    batch_size=config.BATCH_SIZE,
-                                                                    data_loader_args=data_loader_args)
+                                                          train_file=config.TRAIN_FILE,
+                                                          val_file=config.VAL_FILE,
+                                                          test_file=config.TEST_FILE,
+                                                          batch_size=config.BATCH_SIZE,
+                                                          data_loader_args=data_loader_args)
         handler.train(train_dataloader=train_loader,
                       val_dataloader=val_loader,
                       epoch_n=namespace.epochs,
@@ -188,6 +189,21 @@ if __name__=='__main__':
 
         for label in best_path(images_predicted):
             print(convert_to_word(label))
+    elif namespace.mode == 'eval':
+        handler.recover()
+        loss_function = nn.CTCLoss(blank=0,
+                                   reduction='mean')
+
+        _, _, test_loader = create_data_loaders(data_path=config.DATA_PATH,
+                                                train_file=config.TRAIN_FILE,
+                                                val_file=config.VAL_FILE,
+                                                test_file=config.TEST_FILE,
+                                                batch_size=config.BATCH_SIZE,
+                                                data_loader_args=data_loader_args)
+        loss = handler.evaluate(test_dataloader=test_loader,
+                                loss_criteria=loss_function,
+                                desc='Evaluation')
+        print(f"Loss on test dataset is {loss}.")
     elif namespace.mode == 'stats':
         handler.recover(train=True)
         print(f"Number of trainable parameters {handler.get_parameters_number()[0]}.")
