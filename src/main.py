@@ -181,7 +181,7 @@ if __name__=='__main__':
         
         handler.recover()
         image = cv.imread(namespace.file_path, cv.IMREAD_GRAYSCALE)
-        preprocessor = DataPreprocessor(config.IMAGE_HEIGHT, config.IMAGE_WIDTH, PositionMode.Left)
+        preprocessor = WordPreprocessor(config.IMAGE_HEIGHT, config.IMAGE_WIDTH, PositionMode.Left)
         images = preprocessor(image)
         images = np.stack(images, axis=0)
 

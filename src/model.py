@@ -271,7 +271,7 @@ class ModelHandler:
         self.model.eval()
         mean_test_loss = 0.
         test_batches = 0
-        bar_format = '{desc}: {percentage:3.0f}%|{bar:25}| Batch {n_fmt}/{total_fmt}'
+        bar_format = '{desc}: {percentage:3.0f}%|{bar:25}| Batch {n_fmt}/{total_fmt}, Remaining time {remaining}'
         with torch.no_grad():
             for images, labels, lengths in tqdm(test_dataloader, 
                                                 bar_format=bar_format,
