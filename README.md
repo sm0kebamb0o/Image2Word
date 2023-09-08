@@ -14,13 +14,16 @@ In order to train the model you should make some initial setup:
 Now you are ready to use this __awesome__ network :wink:
 
 ## Command line arguments
-Necessary (one of them):
-* `train` <**required number of epochs in training**>
+### Necessary:
+* `train` *--epochs* <**required number of epochs in training**>
 * `predict` <**relative path to the required image**>
 * `eval`
+* `stats`
 
-Optional (should be used only for testing):
-* `-n`, `--new` <**should be used when testing your own images**>
-* `-b`, `--beam_width` <**required beam width in decoding**>
+### Optional:
+* Training:
+  - `--show` <**provides status bar**>
+* Testing:
+  - `-b`, `--beam_width` <**required beam width in decoding**>
 
-* `-lm`, `--lm_inluence` <**required language model influence in decoding $\in$ (0; 1]**>
+  - `-lm`, `--lm_inluence` <**required language model influence in decoding $\in$ (0; 1]**>

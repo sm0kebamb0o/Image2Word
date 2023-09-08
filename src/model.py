@@ -16,15 +16,15 @@ class Sample:
         self.label = label
         self.length = length
 
+
 class CustomDataLoader(Dataset):
     """
     Provides access to the required data.
     Should be used only in Dataloader.
     """
-    def __init__(self, dir_path:str, labels_file:str) -> None:
+
+    def __init__(self, dir_path: str, labels_file: str) -> None:
         self.samples = list()
-        self.image_mean = list()
-        self.image_std = list()
         labels_file = path.join(dir_path, labels_file)
 
         with open(labels_file, 'r') as samples_file:
@@ -44,9 +44,9 @@ class CustomDataLoader(Dataset):
     def __len__(self) -> int:
         return len(self.samples)
 
-    def __getitem__(self, ind:int) -> tuple:
+    def __getitem__(self, ind: int) -> tuple:
         sample = self.samples[ind]
-        image = read_image(sample.path, ImageReadMode.GRAY).to(torch.float)        
+        image = read_image(sample.path, ImageReadMode.GRAY).to(torch.float)
         return image, sample.label, sample.length
 
 class SimpleHTR(nn.Module):
@@ -131,172 +131,72 @@ class SimpleHTR(nn.Module):
 
 
 class ModelHandler:
-    def __init__(self, 
-                 model:nn.Module, 
-                 optimizer:torch.optim.Optimizer,
-                 dir_path:str,
+    """
+    Special class for more convenient use of NN
+    """
+
+    def __init__(self,
+                 model: nn.Module,
+                 optimizer: torch.optim.Optimizer,
+                 dir_path: str,
                  params_file='BestParams.pth',
                  cur_params_file='TrainParams.pth',
                  device=torch.device('cpu')):
         self.model = model.to(device)
         self.optimizer = optimizer
-        self.params_file = path.join(dir_path, params_file)
+        self.best_params_file = path.join(dir_path, params_file)
         self.cur_params_file = path.join(dir_path, cur_params_file)
         self.max_epoch = 0
         self.min_loss = float('inf')
-        self.recovered_test = False
-        self.recovered_train = False
         self.device = device
-        self.history = []
+        self.history = [(self.min_loss, self.min_loss)]
 
     def recover(self, train=False):
         if not train:
-            self.recovered_test = True
-            self.recovered_train = False
-            file = self.params_file
+            if not path.isfile(self.best_params_file):
+                raise "Trying to evaluate NN before training it"
+            self.model.load_state_dict(torch.load(self.best_params_file))
         else:
-            self.recovered_train = True
-            self.recovered_test = False
-            file = self.cur_params_file
-        if not path.isfile(file):
-            return
-        state = torch.load(file)
+            if not path.isfile(self.cur_params_file):
+                return
+            state = torch.load(self.cur_params_file)
 
-        self.model.load_state_dict(state['model'])
-        self.max_epoch = state['epoch']
-        self.min_loss = state['loss']
-        self.history = state['history']
-        self.optimizer.load_state_dict(state['optimizer'])
+            self.model.load_state_dict(state['model'])
+            self.max_epoch = state['epoch']
+            self.min_loss = state['loss']
+            self.history = state['history']
+            self.optimizer.load_state_dict(state['optimizer'])
 
     def save(self, epoch, best=False):
         if best:
-            file = self.params_file
+            torch.save(self.model.state_dict(), self.best_params_file)
         else:
-            file = self.cur_params_file
-        
-        state = {
-            'epoch': epoch,
-            'loss':self.min_loss,
-            'history':self.history,
-            'model': self.model.state_dict(),
-            'optimizer': self.optimizer.state_dict(),
-        }
-        torch.save(state, file)
-    
+            state = {
+                'epoch': epoch,
+                'loss': self.min_loss,
+                'history': self.history,
+                'model': self.model.state_dict(),
+                'optimizer': self.optimizer.state_dict(),
+            }
+            torch.save(state, self.cur_params_file)
+
     def get_parameters_number(self):
-        if not (self.recovered_train or self.recovered_test):
-            raise "Incorrect execution order"
+        self.recover(train=True)
         return sum(p.numel() for p in self.model.parameters() if p.requires_grad), \
-               sum(p.numel() for p in self.model.parameters())
-    
+            sum(p.numel() for p in self.model.parameters())
+
     def get_training_epoch_number(self):
-        if not (self.recovered_train or self.recovered_test):
-            raise "Incorrect execution order"
+        self.recover(train=True)
         return self.max_epoch
-    
+
     def get_min_loss(self):
-        if not (self.recovered_train or self.recovered_test):
-            raise "Incorrect execution order"
+        self.recover(train=True)
         return self.min_loss
-    
+
     def get_stats(self):
-        if not (self.recovered_train or self.recovered_test):
-            raise "Incorrect execution order"
+        self.recover(train=True)
         return self.history
-    
-    def train(self, 
-              train_dataloader: DataLoader, 
-              val_dataloader:DataLoader, 
-              epoch_n:int, 
-              loss_criteria):
-        if not self.recovered_train:
-            self.recover(train=True)
-        bar_format = 'Training: {percentage:3.0f}%|{bar:25}| Epoch {n_fmt}/{total_fmt}, Remainig time {remaining}'
-        for epoch in tqdm(range(self.max_epoch+1, epoch_n+1), bar_format=bar_format):
-            mean_train_loss = 0.
-            train_batches = 0
-            epoch_train_start = datetime.datetime.now()
-            self.model.train()
-            for images, labels, lengths in train_dataloader:
-                images, labels, lengths = images.to(
-                    self.device), labels.to(self.device), lengths.to(self.device)
 
-                self.optimizer.zero_grad()
-                images_transformed = self.model.forward(images)
-
-                input_lengths = torch.full(
-                    size=[images_transformed.shape[0]],
-                    fill_value=config.MAX_LABEL_LENGTH,
-                    dtype=torch.int32, 
-                    device=self.device)
-
-                symbols_probabilities = torch.permute(
-                    images_transformed, (2, 0, 1))
-
-                loss = loss_criteria(symbols_probabilities, 
-                                     labels,
-                                     input_lengths, 
-                                     lengths)
-
-                loss_val = loss.item()
-
-                loss.backward()
-                self.optimizer.step()
-
-                mean_train_loss += loss_val
-                train_batches += 1
-
-            mean_train_loss /= train_batches
-            print(f'Эпоха: {epoch} [Обучение], \
-                  {(datetime.datetime.now() - epoch_train_start).total_seconds():0.2f} сек')
-            print('Среднее значение функции потерь на обучении', mean_train_loss)
-
-            epoch_val_start = datetime.datetime.now()
-            mean_val_loss = self.evaluate(val_dataloader,
-                                          loss_criteria,
-                                          desc='',
-                                          disable=True)
-            print(f'Эпоха: {epoch} [Валидация], \
-                  { (datetime.datetime.now() - epoch_val_start).total_seconds():0.2f} сек')
-            print('Среднее значение функции потерь на валидации', mean_val_loss)
-
-            self.history.append((mean_train_loss, mean_val_loss))
-            if mean_val_loss < self.min_loss:
-                self.min_loss = mean_val_loss
-                self.save(epoch=epoch, best=True)
-            self.save(epoch=epoch)
-        self.max_epoch = epoch_n
-    
-    def evaluate(self, test_dataloader, loss_criteria, desc, disable=False):
-        self.model.eval()
-        mean_test_loss = 0.
-        test_batches = 0
-        bar_format = '{desc}: {percentage:3.0f}%|{bar:25}| Batch {n_fmt}/{total_fmt}, Remaining time {remaining}'
-        with torch.no_grad():
-            for images, labels, lengths in tqdm(test_dataloader, 
-                                                bar_format=bar_format,
-                                                desc=desc,
-                                                disable=disable):
-                images, labels, lengths = images.to(
-                    self.device), labels.to(self.device), lengths.to(self.device)
-                images_transformed = self.model.forward(images)
-                input_lengths = torch.full(
-                    size=[images_transformed.shape[0]],
-                    fill_value=config.MAX_LABEL_LENGTH,
-                    dtype=torch.int32,
-                    device=self.device)
-
-                symbols_probabilities = torch.permute(
-                    images_transformed, (2, 0, 1))
-
-                loss = loss_criteria(symbols_probabilities,
-                                     labels,
-                                     input_lengths,
-                                     lengths)
-                mean_test_loss += loss.item()
-                test_batches += 1
-        mean_test_loss /= test_batches
-        return mean_test_loss
 
 class Image2Word(nn.Module):
     """Handwriteen Text Recognition System."""
@@ -308,15 +208,18 @@ class Image2Word(nn.Module):
         device: device on which all computations should be done
         """
         super(Image2Word, self).__init__()
+        '''
         self.normalization = nn.LayerNorm(
             normalized_shape=[1, config.IMAGE_HEIGHT, config.IMAGE_WIDTH])
+        '''
         self.__setCNN()
         self.__setRNN()
 
     def __setCNN(self):
         CHANNELS_NUMBER = [1, 64, 128, 128, 256, 256, 512, 512]
         CONV_KERNEL_SIZES = [5, 5, 3, 3, 3, 3, 3]
-        POOL_KERNEL_SIZS = POOL_STRIDES = [(2, 2), (2, 1), (2, 2), (), (2, 2), (2, 1), (2, 1)]
+        POOL_KERNEL_SIZS = POOL_STRIDES = [
+            (2, 2), (2, 1), (2, 2), (), (2, 2), (2, 1), (2, 1)]
 
         layers = []
         for i in range(len(CONV_KERNEL_SIZES)):
@@ -364,7 +267,7 @@ class Image2Word(nn.Module):
         # x = x.reshape(batch_size,-1)
         x = self.filter(x)
         # x = x.reshape(batch_size, -1, timestaps)
-        return self.softmax(x)
+        return x
 
     def forward(self, images: torch.Tensor) -> torch.Tensor:
         """
@@ -377,7 +280,7 @@ class Image2Word(nn.Module):
         Return value:
         Batch of the images of size BxCxT
         """
-        images = self.normalization(images)
+        # images = self.normalization(images)
         images = self.__forwardCNN(images)
         images = self.__forwardRNN(images)
-        return images
+        return self.softmax(images)
