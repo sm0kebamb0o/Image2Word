@@ -10,7 +10,9 @@ src/*.png
 src/temp.py
 src/preprocessing.ipynb
 src/samples/
-src/params/
+src/params/*
+src/union.py
+!src/params/*_Best.pth
 src/buf.py
 
 deslant/

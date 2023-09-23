@@ -2,6 +2,7 @@ from os import path, remove
 import cv2 as cv
 import numpy as np
 from enum import Enum
+import sys
 
 import config
 import utils
@@ -157,7 +158,6 @@ class DataNormalizer:
     """
 
     def __init__(self,
-                 dir_path: str,
                  raw_labels_file: str,
                  labels_file: str,
                  image_height: int,
@@ -170,7 +170,6 @@ class DataNormalizer:
         image_height: the required height of all the images
         image_width: the reauired width of all the imagess
         """
-        self.dir_path = dir_path
         self.raw_labels_file = raw_labels_file
         self.labels_file = labels_file
         self.preproccesor = WordPreprocessor(image_height=image_height,
@@ -180,13 +179,11 @@ class DataNormalizer:
 
     def __call__(self) -> dict:
         """Returns a map with terminals and their id."""
-        raw_labels_file = path.join(self.dir_path, self.raw_labels_file)
-        labels_file = path.join(self.dir_path, self.labels_file)
 
         dictionary = dict()
         cur_label_id = 1
 
-        with open(raw_labels_file, 'r') as raw_labels, open(labels_file, 'w') as labels:
+        with open(self.raw_labels_file, 'r') as raw_labels, open(self.labels_file, 'w') as labels:
             for line in raw_labels:
                 if line[0] == '#':
                     continue
@@ -243,12 +240,13 @@ class DataNormalizer:
         return label
 
 
-def divide_dataset(dir_path: str,
-                   labels_file: str,
+def divide_dataset(labels_file: str,
                    train_file: str,
                    val_file: str,
                    test_file: str,
-                   same_images: int):
+                   same_images: int,
+                   validation_percent:float,
+                   testing_parcent:float):
     """
     Divide dataset into three parts: training, validation, testing
 
@@ -260,17 +258,16 @@ def divide_dataset(dir_path: str,
     test_file: the file, where labels for testing would be stored
     same_images: number of preprocessed images that correspond to one initial
     """
-    labels_file = path.join(dir_path, labels_file)
-    train_file = path.join(dir_path, train_file)
-    val_file = path.join(dir_path, val_file)
-    test_file = path.join(dir_path, test_file)
-
+    assert 0. <= validation_percent <= 1.
+    assert 0. <= testing_parcent <= 1.
+    assert validation_percent + testing_parcent <= 1.
+    
     with open(labels_file, 'r') as fin:
         lines = fin.readlines()
         ids = [i for i in range(0, len(lines), same_images)]
 
-    val_num = int(len(ids) * config.VALIDATION_PERCENT)
-    test_num = int(len(ids) * config.TESTING_PERCENT)
+    val_num = int(len(ids) * validation_percent)
+    test_num = int(len(ids) * testing_parcent)
     train_num = len(ids) - val_num - test_num
 
     train = np.random.choice(ids, size=train_num, replace=False)
@@ -295,19 +292,17 @@ def divide_dataset(dir_path: str,
             for off in range(same_images):
                 print(lines[i+off], end='', file=fresult)
 
-
 if __name__ == '__main__':
-    normalizer = DataNormalizer(dir_path=config.DATA_PATH,
-                                raw_labels_file=config.RAW_LABELS_FILE,
-                                labels_file=config.LABELS_FILE,
-                                image_height=config.IMAGE_HEIGHT,
-                                image_width=config.IMAGE_WIDTH)
+    normalizer = DataNormalizer(raw_labels_file=path.join(config.DATA_PATH, config.RAW_LABELS_FILE),
+                                    labels_file=path.join(config.DATA_PATH, config.LABELS_FILE),
+                                    image_height=config.IMAGE_HEIGHT,
+                                    image_width=config.IMAGE_WIDTH)
     chars_used = normalizer()
+    print('Characters appeared in dataset:')
     print(chars_used)
 
-    divide_dataset(dir_path=config.DATA_PATH,
-                   labels_file=config.LABELS_FILE,
-                   train_file=config.TRAIN_FILE,
-                   val_file=config.VAL_FILE,
-                   test_file=config.TEST_FILE,
+    divide_dataset(labels_file=path.join(config.DATA_PATH, config.LABELS_FILE),
+                   train_file=path.join(config.DATA_PATH, config.TRAIN_FILE),
+                   val_file=path.join(config.DATA_PATH, config.VAL_FILE),
+                   test_file=path.join(config.DATA_PATH, config.TEST_FILE),
                    same_images=normalizer.images_number)

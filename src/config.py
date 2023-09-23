@@ -11,7 +11,7 @@ TEST_FILE = 'test.txt'
 VAL_FILE = 'val.txt'
 TRAIN_FILE = 'train.txt'
 
-PARAMS_FOLDER = '.\params'
+PARAMS = '.\params'
 TEXT_FILE = 'corpus.txt'
 LM_TABLE = 'LMTable.csv'
 
@@ -39,12 +39,20 @@ INDEXES_TO_TERMINALS = ['', 'A', 'M', 'O', 'V', 'E', 't', 'o', 's', 'p', 'r', '.
             'J', 'Y', '7', ';', 'z', 'Z', '6', '?', '*', 'X', 'Q', '!', '/',
             '&', '+']
 
+BLANK = 0
+
 TESTING_PERCENT = 0.1
 VALIDATION_PERCENT = 0.2
 BATCH_SIZE = 32
 
-SAVED_PARAMETERS = 'weights.pth'
-LOG_FILE = 'results.csv'
+'''
+BEST_PARAMS = 'Inv_Lin_Trans_Less_Best.pth'
+CUR_PARAMS = 'Inv_Lin_Trans_Less.pth'
+'''
+BEST_PARAMS = 'Inv_Lin_Best.pth'
+CUR_PARAMS = 'Inv_Lin.pth'
+
+LOG_FILE = 'results.txt'
 
 LEARNING_RATE = 1e-3
 LM_INFLUENCE = 1e-1
