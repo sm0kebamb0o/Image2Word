@@ -330,7 +330,7 @@ class Image2Word(nn.Module):
                                                         batch_first=True, 
                                                         norm_first=True)
         self.encoder = nn.TransformerEncoder(encoder_layer=self.encoder_layer,
-                                             num_layers=4)
+                                             num_layers=2)
     
     def __forwardEncoder(self, x:torch.Tensor):
         x = x.squeeze(dim=2).transpose(1, 2)
