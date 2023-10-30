@@ -48,11 +48,30 @@ BATCH_SIZE = 32
 '''
 BEST_PARAMS = 'Inv_Lin_Trans_Less_Best.pth'
 CUR_PARAMS = 'Inv_Lin_Trans_Less.pth'
-'''
+
 BEST_PARAMS = 'Inv_Lin_Best.pth'
 CUR_PARAMS = 'Inv_Lin.pth'
 
-LOG_FILE = 'results.txt'
+BEST_PARAMS = 'T42_modes_Best.pth'
+CUR_PARAMS = 'T42_modes.pth'
+'''
 
-LEARNING_RATE = 1e-3
+BEST_PARAMS = 'CRNN_BEST.pth'
+CUR_PARAMS = 'CRNN.pth'
+LOG_FILE = 'CRNN.txt'
+
+LEARNING_RATE = 3e-4
 LM_INFLUENCE = 1e-1
+
+## Baseline options ##
+class BASELINE:
+    IMAGE_HEIGHT = 32
+    IMAGE_WIDTH = 128
+
+    MAX_LABEL_LENGTH = 32
+
+    BEST_PARAMS = 'base_best.pth'
+    PARAMS = 'base.pth'
+    LOG_FILE = 'base.txt'
+
+    LR = 1e-4

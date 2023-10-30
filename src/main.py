@@ -9,13 +9,65 @@ import datetime
 import sys
 import argparse
 import matplotlib.pyplot as plt
+from torchmetrics.functional import char_error_rate
 
-from model import ModelHandler, Image2Word, Image2Word_old
+from model import CRNN, CRNNDataset
 import config
-from preprocessing import WordPreprocessor, PositionMode
-import utils
+from processing import WordProcessor, PositionMode
+from utils import ModelHandler
 
 ############ Required functions ############
+
+
+def make_initial_setup():
+    if torch.cuda.is_available():
+        device = torch.device('cuda')
+        data_loader_args = {'num_workers': 3, 'pin_memory': True}
+    else:
+        device = torch.device('cpu')
+        data_loader_args = {}
+
+    torch.manual_seed(0)
+    torch.cuda.manual_seed(0)
+    return device, data_loader_args
+
+
+def create_data_loaders(
+        train_file: str,
+        val_file: str,
+        test_file: str,
+        batch_size: int,
+        data_loader_args: dict,
+        image_height:int,
+        image_width:int):
+    train_dataset = CRNNDataset(train_file, 
+                                train=True,
+                                image_height=image_height,
+                                image_width=image_width)
+    val_dataset = CRNNDataset(val_file,
+                              image_height=image_height,
+                              image_width=image_width)
+    test_dataset = CRNNDataset(test_file,
+                               image_height=image_height,
+                               image_width=image_width)
+
+    print('Training Dataset size:', len(train_dataset))
+    print('Validation Dataset size:', len(val_dataset))
+    print('Testing Dataset size:', len(test_dataset))
+
+    train_loader = DataLoader(train_dataset,
+                              batch_size=batch_size,
+                              shuffle=True,
+                              **data_loader_args)
+    val_loader = DataLoader(val_dataset,
+                            batch_size=batch_size,
+                            shuffle=False,
+                            **data_loader_args)
+    test_loader = DataLoader(test_dataset,
+                             batch_size=batch_size,
+                             shuffle=False,
+                             **data_loader_args)
+    return train_loader, val_loader, test_loader
 
 def train(handler: ModelHandler,
           train_dataloader: DataLoader,
@@ -38,13 +90,13 @@ def train(handler: ModelHandler,
         train_batches = 0
         epoch_train_start = datetime.datetime.now()
         handler.model.train()
-        for images, labels, lengths in tqdm(train_dataloader,
+        for images, labels in tqdm(train_dataloader,
                                             leave=False,
                                             desc='  Gradient descent',
                                             bar_format=batch_bar_format,
                                             disable=show_status_bar):
-            images, labels, lengths = images.to(
-                handler.device), labels.to(handler.device), lengths.to(handler.device)
+            images, labels = images.to(
+                handler.device), labels.to(handler.device)
 
             handler.optimizer.zero_grad()
             images_transformed = handler.model.forward(images)
@@ -56,6 +108,8 @@ def train(handler: ModelHandler,
 
             symbols_probabilities = torch.permute(
                 images_transformed, (2, 0, 1))
+            
+            lengths = (labels!=0).sum(axis=1).to(handler.device)
 
             loss = loss_criteria(symbols_probabilities,
                                  labels,
@@ -79,12 +133,13 @@ def train(handler: ModelHandler,
         print(file=log_file)
 
         epoch_val_start = datetime.datetime.now()
-        mean_val_loss = evaluate(handler,
-                                 val_dataloader,
-                                 loss_criteria,
-                                 description='  Validation',
-                                 disable=show_status_bar,
-                                 leave=False)
+        mean_val_loss, _ = evaluate(handler,
+                                    val_dataloader,
+                                    loss_criteria,
+                                    description='  Validation',
+                                    disable=show_status_bar,
+                                    leave=False)
+        handler.lr_scheduler.step(mean_val_loss)
         
         print(f'Epoch: {epoch} [Validation], \
               { (datetime.datetime.now() - epoch_val_start).total_seconds():0.2f} s', file=log_file)
@@ -105,20 +160,22 @@ def evaluate(handler: ModelHandler,
              test_dataloader: DataLoader,
              loss_criteria,
              description,
+             cer=False,
              disable=False,
              leave=True):
     handler.model.eval()
     mean_test_loss = 0.
+    mean_cer = 0.
     test_batches = 0
     bar_format = '{desc}: {percentage:3.0f}%|{bar:25}| Batch {n_fmt}/{total_fmt}, Remaining time {remaining}'
     with torch.no_grad():
-        for images, labels, lengths in tqdm(test_dataloader,
+        for images, labels in tqdm(test_dataloader,
                                             bar_format=bar_format,
                                             desc=description,
                                             disable=disable,
                                             leave=leave):
-            images, labels, lengths = images.to(
-                handler.device), labels.to(handler.device), lengths.to(handler.device)
+            images, labels = images.to(
+                handler.device), labels.to(handler.device)
             images_transformed = handler.model.forward(images)
             input_lengths = torch.full(
                 size=[images_transformed.shape[0]],
@@ -128,6 +185,8 @@ def evaluate(handler: ModelHandler,
 
             symbols_probabilities = torch.permute(
                 images_transformed, (2, 0, 1))
+            
+            lengths = (labels!=0).sum(axis=1).to(handler.device)
 
             loss = loss_criteria(symbols_probabilities,
                                  labels,
@@ -135,8 +194,14 @@ def evaluate(handler: ModelHandler,
                                  lengths)
             mean_test_loss += loss.item()
             test_batches += 1
+
+            if cer:
+                symbols_probabilities = symbols_probabilities.permute(1, 2, 0)
+                mean_cer += calculate_cer(symbols_probabilities, labels)
+
     mean_test_loss /= test_batches
-    return mean_test_loss
+    mean_cer /= test_batches
+    return mean_test_loss, mean_cer
 
 
 def convert_to_word(word_embedding: torch.Tensor) -> str:
@@ -167,6 +232,16 @@ def best_path(symbols_probability: torch.Tensor) -> torch.Tensor:
         most_probable_label[i, mask.sum():] = 0
     return most_probable_label
 
+def calculate_cer(symbols_probabilities: torch.Tensor,
+                  labels: torch.Tensor) -> float:
+    predicts = best_path(symbols_probabilities)
+
+    def decode(predict): return convert_to_word(predict)
+
+    predicts_str = list(map(decode, predicts))
+    labels_str = list(map(decode, labels))
+
+    return char_error_rate(predicts_str, labels_str).item()
 
 def create_parser():
     parser = argparse.ArgumentParser(description='Image2Vec',
@@ -223,30 +298,41 @@ if __name__ == '__main__':
     parser = create_parser()
     namespace = parser.parse_args(sys.argv[1:])
 
-    device, data_loader_args = utils.make_initial_setup()
+    device, data_loader_args = make_initial_setup()
 
-    model = Image2Word_old()   ###########
+    model = CRNN(lstm_hidden_size=512,
+                 lstm_num_layers=2,
+                 mlp_hidden_size=2048,
+                 dropout_p=0.3,
+                 output_size=config.TERMINALS_NUMBER+1)
     optimizer = torch.optim.Adam(params=model.parameters(),
                                  lr=config.LEARNING_RATE)
+    lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer=optimizer, 
+                                                              mode='min',
+                                                              patience=5,
+                                                              verbose=True)
     handler = ModelHandler(model,
                            optimizer,
+                           lr_scheduler,
                            params_file=path.join(config.PARAMS, config.BEST_PARAMS),
                            cur_params_file=path.join(config.PARAMS, config.CUR_PARAMS),
                            device=device)
 
     if namespace.mode == 'train':
         handler.recover(train=True)
-        loss_function = nn.CTCLoss(blank=0,
+        loss_function = nn.CTCLoss(blank=config.BLANK,
                                    reduction='mean')
 
-        train_loader, val_loader, _ = utils.create_data_loaders(train_file=path.join(
-                                                                    config.DATA_PATH, config.TRAIN_FILE),
-                                                                val_file=path.join(
-                                                                    config.DATA_PATH, config.VAL_FILE),
-                                                                test_file=path.join(
-                                                                    config.DATA_PATH, config.TEST_FILE),
-                                                                batch_size=config.BATCH_SIZE,
-                                                                data_loader_args=data_loader_args)
+        train_loader, val_loader, _ = create_data_loaders(train_file=path.join(
+                                                              config.DATA_PATH, config.TRAIN_FILE),
+                                                          val_file=path.join(
+                                                              config.DATA_PATH, config.VAL_FILE),
+                                                          test_file=path.join(
+                                                              config.DATA_PATH, config.TEST_FILE),
+                                                          batch_size=config.BATCH_SIZE,
+                                                          data_loader_args=data_loader_args,
+                                                          image_height=config.IMAGE_HEIGHT,
+                                                          image_width=config.IMAGE_WIDTH)
         with open(config.LOG_FILE, 'a') as log_file:
             train(handler=handler,
                   train_dataloader=train_loader,
@@ -258,23 +344,27 @@ if __name__ == '__main__':
 
     elif namespace.mode == 'eval':
         handler.recover()
-        loss_function = nn.CTCLoss(blank=0,
+        loss_function = nn.CTCLoss(blank=config.BLANK,
                                    reduction='mean')
 
-        _, _, test_loader = utils.create_data_loaders(train_file=path.join(
-                                                          config.DATA_PATH, config.TRAIN_FILE),
-                                                      val_file=path.join(
-                                                          config.DATA_PATH, config.VAL_FILE),
-                                                      test_file=path.join(
-                                                          config.DATA_PATH, config.TEST_FILE),
-                                                      batch_size=config.BATCH_SIZE,
-                                                      data_loader_args=data_loader_args)
-        loss = evaluate(handler=handler,
-                        test_dataloader=test_loader,
-                        loss_criteria=loss_function,
-                        description='Evaluation',
-                        disable=not namespace.show)
+        _, _, test_loader = create_data_loaders(train_file=path.join(
+                                                    config.DATA_PATH, config.TRAIN_FILE),
+                                                val_file=path.join(
+                                                    config.DATA_PATH, config.VAL_FILE),
+                                                test_file=path.join(
+                                                    config.DATA_PATH, config.TEST_FILE),
+                                                batch_size=config.BATCH_SIZE,
+                                                data_loader_args=data_loader_args,
+                                                image_height=config.IMAGE_HEIGHT,
+                                                image_width=config.IMAGE_WIDTH)
+        loss, cer = evaluate(handler=handler,
+                             test_dataloader=test_loader,
+                             loss_criteria=loss_function,
+                             description='Evaluation',
+                             disable=not namespace.show,
+                             cer=True)
         print(f"Loss on test dataset is {loss}.")
+        print(f"CER on test dataset is {cer}.")
     elif namespace.mode == 'predict':
         if not path.isfile(namespace.file_path):
             raise RuntimeError("No such file")
@@ -283,33 +373,25 @@ if __name__ == '__main__':
 
         start = datetime.datetime.now()
         image = cv.imread(namespace.file_path, cv.IMREAD_GRAYSCALE)
-        preprocessor = WordPreprocessor(
-            config.IMAGE_HEIGHT, config.IMAGE_WIDTH, PositionMode.Left)
-        images = preprocessor(image)
+        preprocessor = WordProcessor(config.IMAGE_HEIGHT, config.IMAGE_WIDTH, PositionMode.Left)
+        image_processed = preprocessor(image)
 
-        transformed_images = images
-
-        images = np.stack(images, axis=0)
+        sample = torch.FloatTensor(image_processed).view(size=[1,1,*image_processed.shape]).to(device)
 
         handler.model.eval()
         with torch.no_grad():
-            images_predicted = handler.model.forward(
-                torch.FloatTensor(images).unsqueeze(dim=1).to(device))
-            images_predicted.detach_
+            images_predicted : torch.Tensor = handler.model.forward(sample).detach()
         elapsed_time = (datetime.datetime.now() - start).total_seconds()
         
-        labels = [convert_to_word(label) for label in best_path(images_predicted)]
+        label = convert_to_word(best_path(images_predicted).squeeze())
+        print(label)
         
         if namespace.show:
             print(f"Elapsed time {elapsed_time}.")
-            fig, axs = plt.subplots(nrows=images.shape[0], ncols=1)
-            for i in range(images.shape[0]):
-                axs[i].imshow(images[i], cmap='gray')
-                axs[i].set_title(labels[i], loc='right')
-            fig.text(0.0, 0.0, str(datetime.datetime.now()),
+            plt.imshow(image_processed, cmap='gray')
+            plt.text(0.0, 0.0, str(datetime.datetime.now()),
                      fontsize=10, color='gray', alpha=0.6)
-            fig.suptitle('Predictions', fontweight='heavy', fontsize='x-large')
-            fig.tight_layout()
+            plt.tight_layout()
             plt.show()
 
     elif namespace.mode == 'stats':
@@ -330,7 +412,7 @@ if __name__ == '__main__':
         plt.tight_layout()
         plt.legend()
         plt.text(
-            0.0, 0.0, str(datetime.datetime.now()),
+            0., 0., str(datetime.datetime.now()),
             fontsize=10, color='gray', alpha=0.6
         )
         plt.show()
